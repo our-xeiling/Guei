@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Кригшпиль — Kriegsspiel 1824</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { width:100%; height:100%; overflow:hidden; background:#1c1a14; }
+  body {
+    font-family: Georgia, 'Times New Roman', serif;
+    color:#e8e0cc;
+    display:flex; flex-direction:column;
+    height:100dvh;
+    user-select:none; -webkit-user-select:none;
+    touch-action:none;
+  }
+  #topbar {
+    flex:0 0 auto;
+    display:flex; align-items:center; gap:6px;
+    padding:6px 8px;
+    padding-top:calc(6px + env(safe-area-inset-top));
+    background:linear-gradient(#3a3426, #2b2619);
+    border-bottom:2px solid #57503a;
+    font-size:14px;
+    z-index:5;
+  }
+  #turninfo { flex:1 1 auto; line-height:1.25; min-width:0; }
+  #turninfo .side { font-weight:bold; letter-spacing:.5px; }
+  #turninfo .side.B { color:#7fb2e5; }
+  #turninfo .side.R { color:#e58a7f; }
+  .btn {
+    flex:0 0 auto;
+    background:#4a4330; color:#e8e0cc;
+    border:1px solid #6b6248; border-radius:6px;
+    padding:9px 13px; font-family:inherit; font-size:14px;
+    cursor:pointer; white-space:nowrap;
+  }
+  .btn:active { background:#5d5439; }
+  .btn.primary { background:#6d5f2e; border-color:#9a8a4e; font-weight:bold; }
+  #canvaswrap { flex:1 1 auto; position:relative; overflow:hidden; }
+  #map { position:absolute; inset:0; width:100%; height:100%; touch-action:none; }
+  #bottombar {
+    flex:0 0 auto;
+    background:linear-gradient(#2b2619, #3a3426);
+    border-top:2px solid #57503a;
+    padding:6px 10px;
+    padding-bottom:calc(6px + env(safe-area-inset-bottom));
+    font-size:13px; min-height:52px; z-index:5;
+  }
+  #selinfo { font-size:13px; line-height:1.35; }
+  #selinfo b { color:#fff; }
+  #hint { color:#a89f83; font-size:12px; margin-top:2px; }
+
+  .overlay {
+    position:absolute; inset:0; z-index:20;
+    background:rgba(15,13,9,.96);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:24px; gap:14px;
+  }
+  .overlay.hidden { display:none; }
+  .overlay h1 { font-size:26px; letter-spacing:2px; color:#d8c98f; text-transform:uppercase; }
+  .overlay h2 { font-size:20px; color:#d8c98f; }
+  .overlay p { font-size:14px; line-height:1.5; max-width:520px; color:#cfc6ab; }
+  .overlay .bigbtn {
+    display:block; width:100%; max-width:340px;
+    background:#4a4330; color:#e8e0cc;
+    border:2px solid #9a8a4e; border-radius:10px;
+    padding:16px 10px; font-family:inherit; font-size:17px; cursor:pointer;
+  }
+  .overlay .bigbtn:active { background:#5d5439; }
+  .rules { text-align:left; font-size:13px; line-height:1.5; max-width:560px;
+    background:#262216; border:1px solid #4a4330; border-radius:8px; padding:12px 14px;
+    max-height:38dvh; overflow-y:auto; touch-action:pan-y; }
+  .rules li { margin-left:18px; margin-bottom:4px; }
+
+  #logsheet {
+    position:absolute; left:0; right:0; bottom:0; z-index:15;
+    max-height:55dvh; overflow-y:auto; touch-action:pan-y;
+    background:#211d13; border-top:2px solid #57503a;
+    padding:10px 14px; font-size:13px; line-height:1.5;
+    transform:translateY(100%); transition:transform .22s ease;
+  }
+  #logsheet.open { transform:translateY(0); }
+  #logsheet .entry { margin-bottom:3px; color:#cfc6ab; }
+  #logsheet .entry.sys { color:#8fa77f; }
+  #logsheet .head { display:flex; justify-content:space-between; color:#d8c98f;
+    font-weight:bold; margin-bottom:6px; border-bottom:1px solid #4a4330; padding-bottom:4px; }
+  .die { color:#e8c95a; font-weight:bold; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div id="turninfo"><span class="side B" id="sidelabel">Синие</span><br><span id="turnlabel">Ход 1 / 20</span></div>
+  <button class="btn" id="btnzoomout" title="Отдалить">−</button>
+  <button class="btn" id="btnzoomin" title="Приблизить">+</button>
+  <button class="btn" id="btnlog">Журнал</button>
+  <button class="btn primary" id="btnend">Конец хода</button>
+</div>
+
+<div id="canvaswrap">
+  <canvas id="map"></canvas>
+  <div id="logsheet">
+    <div class="head"><span>Журнал полевого суда (унтер-офицер)</span><button class="btn" id="btnlogclose">Закрыть</button></div>
+    <div id="logentries"></div>
+  </div>
+
+  <div class="overlay" id="titleoverlay">
+    <h1>Кригшпиль</h1>
+    <p>Командно-штабная игра по правилам прусской войны 1824 года. Синие наступают с запада, красные обороняют восток.</p>
+    <div class="rules">
+      <b>Правила для офицеров:</b>
+      <ul>
+        <li>Коснитесь своего отряда, затем подсвеченного гекса — отряд выступит.</li>
+        <li>Коснитесь соседнего вражеского отряда — рукопашный бой. Артиллерия стреляет на 4 гекса, но ей нужна прямая видимость.</li>
+        <li>Бой решают кости: сила отряда + бросок против обороны противника (лес, холм и город дают укрытие).</li>
+        <li>Поражённый отряд отступает или бывает расстроен (половина силы). Расстройство снимается броском в начале хода.</li>
+        <li>Туман войны: противник виден только в пределах видимости; лес, холмы и города закрывают обзор.</li>
+        <li>Победа: уничтожить вражеского командира, истребить все отряды или занять город противника до конца 20-го хода.</li>
+      </ul>
+    </div>
+    <button class="bigbtn" id="btnhot">Двое на одном устройстве<br><small>(передавайте планшет, как в штабе)</small></button>
+    <button class="bigbtn" id="btnai">Против начальника штаба (ИИ)<br><small>вы командуете синими</small></button>
+  </div>
+
+  <div class="overlay hidden" id="passoverlay">
+    <h2 id="passtext">Передайте устройство</h2>
+    <p>Противник не должен видеть карту.</p>
+    <button class="bigbtn" id="btnready">Карта развёрнута — я готов</button>
+  </div>
+
+  <div class="overlay hidden" id="overoverlay">
+    <h2 id="overtitle">—</h2>
+    <p id="overtext">—</p>
+    <button class="bigbtn" id="btnrestart">Новая партия</button>
+  </div>
+</div>
+
+<div id="bottombar">
+  <div id="selinfo">Отряд не выбран.</div>
+  <div id="hint">Коснитесь отряда, чтобы выбрать его.</div>
+</div>
+
+<script>
+'use strict';
+
+/* ===== Гексагональная математика (flat-top, axial) ===== */
+var W = 15, H = 11, SIZE = 34;
+var SQ3 = Math.sqrt(3);
+var DIRS = [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
+function k(q, r) { return q + ',' + r; }
+
+function hexToPixel(q, r) {
+  return { x: SIZE * 1.5 * q, y: SIZE * SQ3 * (r + q / 2) };
+}
+function pixelToHex(x, y) {
+  var q = (2 / 3 * x) / SIZE;
+  var r = (-1 / 3 * x + SQ3 / 3 * y) / SIZE;
+  return cubeRound(q, r);
+}
+function cubeRound(q, r) {
+  var s = -q - r;
+  var rq = Math.round(q), rr = Math.round(r), rs = Math.round(s);
+  var dq = Math.abs(rq - q), dr = Math.abs(rr - r), ds = Math.abs(rs - s);
+  if (dq > dr && dq > ds) rq = -rr - rs;
+  else if (dr > ds) rr = -rq - rs;
+  return { q: rq, r: rr };
+}
+function hexDist(a, b) {
+  var dq = a.q - b.q, dr = a.r - b.r;
+  return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2;
+}
+function hexLine(a, b) {
+  var N = hexDist(a, b);
+  var res = [];
+  for (var i = 0; i <= N; i++) {
+    var t = N === 0 ? 0 : i / N;
+    res.push(cubeRound(a.q + (b.q - a.q) * t, a.r + (b.r - a.r) * t));
+  }
+  return res;
+}
+function inMap(q, r) { return q >= 0 && q < W && r >= 0 && r < H; }
+
+/* ===== Генерация местности (фиксированный сид) ===== */
+var T = { PLAIN:0, FOREST:1, HILL:2, WATER:3, MARSH:4, TOWN:5 };
+var map = [];
+
+function mulberry32(seed) {
+  return function() {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function generateMap() {
+  var rnd = mulberry32(18240);
+  map = [];
+  for (var r = 0; r < H; r++) {
+    var row = [];
+    for (var q = 0; q < W; q++) row.push({ t: T.PLAIN, road: false });
+    map.push(row);
+  }
+  var riverQ = [];
+  for (r = 0; r < H; r++) {
+    var q = 8 + Math.round(1.1 * Math.sin(r * 0.85) + 0.7 * Math.sin(r * 1.9 + 2));
+    q = Math.max(6, Math.min(10, q));
+    riverQ.push(q);
+    map[r][q].t = T.WATER;
+    if (q > 6 && map[r][q-1].t !== T.WATER && rnd() < 0.25) map[r][q-1].t = T.WATER;
+  }
+  var forests = [[3,2],[4,8],[12,2],[12,8],[6,0],[10,10],[2,6],[13,5]];
+  for (var f = 0; f < forests.length; f++) {
+    var fq = forests[f][0], fr = forests[f][1];
+    for (var i = 0; i < 6; i++) {
+      if (inMap(fq, fr) && map[fr][fq].t === T.PLAIN) map[fr][fq].t = T.FOREST;
+      var d = DIRS[Math.floor(rnd() * 6)];
+      fq += d[0]; fr += d[1];
+    }
+  }
+  var hills = [[5,3],[9,7],[7,5],[11,3],[3,9]];
+  for (i = 0; i < hills.length; i++) {
+    var hq = hills[i][0], hr = hills[i][1];
+    if (map[hr][hq].t === T.PLAIN) map[hr][hq].t = T.HILL;
+    if (rnd() < 0.6) {
+      var d2 = DIRS[Math.floor(rnd() * 6)];
+      var q2 = hq + d2[0], r2 = hr + d2[1];
+      if (inMap(q2, r2) && map[r2][q2].t === T.PLAIN) map[r2][q2].t = T.HILL;
+    }
+  }
+  for (r = 8; r < H; r++) {
+    for (q = 6; q <= 10; q++) {
+      if (map[r][q].t === T.PLAIN && rnd() < 0.35) map[r][q].t = T.MARSH;
+    }
+  }
+  var TOWN_A = { q: 4, r: 5 }, TOWN_B = { q: 11, r: 5 };
+  map[TOWN_A.r][TOWN_A.q].t = T.TOWN;
+  map[TOWN_B.r][TOWN_B.q].t = T.TOWN;
+
+  var bridge1 = { q: riverQ[2], r: 2 };
+  var bridge2 = { q: riverQ[8], r: 8 };
+
+  var roadPaths = [
+    [{q:0,r:5}, TOWN_A, bridge1, TOWN_B, {q:14,r:5}],
+    [{q:2,r:0}, {q:riverQ[2] < 8 ? riverQ[2]-1 : riverQ[2]+1, r:2}, bridge1, {q:6,r:2}],
+    [{q:12,r:10}, {q:riverQ[8] < 8 ? riverQ[8]-1 : riverQ[8]+1, r:8}, bridge2, {q:9,r:10}]
+  ];
+  for (i = 0; i < roadPaths.length; i++) {
+    var path = roadPaths[i];
+    for (var j = 0; j < path.length - 1; j++) {
+      var line = hexLine(path[j], path[j+1]);
+      for (var m = 0; m < line.length; m++) {
+        if (inMap(line[m].q, line[m].r)) map[line[m].r][line[m].q].road = true;
+      }
+    }
+  }
+  map[bridge1.r][bridge1.q].road = true;
+  map[bridge2.r][bridge2.q].road = true;
+  for (r = 0; r < H; r++) {
+    for (q = 0; q < 3; q++) if (map[r][q].t !== T.TOWN) { map[r][q].t = T.PLAIN; map[r][q].road = false; }
+    for (q = W - 3; q < W; q++) if (map[r][q].t !== T.TOWN) { map[r][q].t = T.PLAIN; map[r][q].road = false; }
+  }
+  map[TOWN_B.r][TOWN_B.q].t = T.TOWN;
+  return { TOWN_A: TOWN_A, TOWN_B: TOWN_B, bridge1: bridge1, bridge2: bridge2 };
+}
+
+function terrDef(cell) {
+  if (cell.t === T.TOWN) return 3;
+  if (cell.t === T.FOREST || cell.t === T.HILL) return 2;
+  if (cell.t === T.MARSH) return 1;
+  return 0;
+}
+function moveCost(cell) {
+  if (cell.t === T.WATER && !cell.road) return 99;
+  if (cell.road || cell.t === T.TOWN) return 1;
+  if (cell.t === T.FOREST || cell.t === T.HILL) return 2;
+  if (cell.t === T.MARSH) return 3;
+  return 1;
+}
+function blocksLOS(cell, onHill) {
+  if (cell.t === T.FOREST || cell.t === T.TOWN) return true;
+  if (cell.t === T.HILL && !onHill) return true;
+  return false;
+}
+function losClear(a, b) {
+  var aHill = map[a.r][a.q].t === T.HILL;
+  var bHill = map[b.r][b.q].t === T.HILL;
+  var onHill = aHill || bHill;
+  var line = hexLine(a, b);
+  for (var i = 1; i < line.length - 1; i++) {
+    var h = line[i];
+    if (inMap(h.q, h.r) && blocksLOS(map[h.r][h.q], onHill)) return false;
+  }
+  return true;
+}
+
+/* ===== Отряды ===== */
+var UNITDEF = {
+  infantry:  { name:'Пехота',    str:6, mp:4, range:1, view:3, sym:'X' },
+  grenadier: { name:'Гренадеры', str:8, mp:4, range:1, view:3, sym:'X' },
+  cavalry:   { name:'Кавалерия', str:5, mp:8, range:1, view:5, sym:'/' },
+  artillery: { name:'Артиллерия',str:7, mp:3, range:4, view:4, sym:'O' },
+  commander: { name:'Командир',  str:3, mp:5, range:1, view:3, sym:'S' }
+};
+var units = [];
+var uid = 0;
+
+function mkUnit(side, type, q, r) {
+  var d = UNITDEF[type];
+  var u = { id: ++uid, side: side, type: type, name: d.name, q: q, r: r, str: d.str, mp: d.mp,
+            range: d.range, view: d.view, alive: true, disrupted: false,
+            canAttack: true, movedFar: false };
+  units.push(u);
+  return u;
+}
+
+function setupArmies() {
+  units = []; uid = 0;
+  mkUnit('B','commander',2,5);
+  mkUnit('B','infantry',1,3); mkUnit('B','infantry',1,4);
+  mkUnit('B','infantry',1,6); mkUnit('B','infantry',1,7);
+  mkUnit('B','grenadier',2,4);
+  mkUnit('B','cavalry',2,7);
+  mkUnit('B','artillery',0,4); mkUnit('B','artillery',0,6);
+  mkUnit('R','commander',12,5);
+  mkUnit('R','infantry',13,3); mkUnit('R','infantry',13,4);
+  mkUnit('R','infantry',13,6); mkUnit('R','infantry',13,7);
+  mkUnit('R','grenadier',12,4);
+  mkUnit('R','cavalry',12,7);
+  mkUnit('R','artillery',14,4); mkUnit('R','artillery',14,6);
+}
+
+function unitAt(q, r) {
+  for (var i = 0; i < units.length; i++) {
+    var u = units[i];
+    if (u.alive && u.q === q && u.r === r) return u;
+  }
+  return null;
+}
+function effStr(u) { return u.disrupted ? Math.ceil(u.str / 2) : u.str; }
+function d6() { return 1 + Math.floor(Math.random() * 6); }
+
+/* ===== Состояние партии ===== */
+var state = {
+  screen: 'title',
+  mode: 'hot',
+  phase: 'B',
+  turn: 1,
+  maxTurn: 20,
+  selected: null,
+  reach: null,
+  over: false
+};
+var towns = null;
+
+/* ===== Видимость (туман войны) ===== */
+function visibleSet(side) {
+  var vis = new Set();
+  for (var i = 0; i < units.length; i++) {
+    var u = units[i];
+    if (!u.alive || u.side !== side) continue;
+    var onHill = map[u.r][u.q].t === T.HILL;
+    var range = u.view + (onHill ? 2 : 0);
+    var c = hexToPixel(u.q, u.r);
+    for (var r = Math.max(0, u.r - range); r <= Math.min(H - 1, u.r + range); r++) {
+      for (var q = Math.max(0, u.q - range); q <= Math.min(W - 1, u.q + range); q++) {
+        var t = hexToPixel(q, r);
+        var dx = t.x - c.x, dy = t.y - c.y;
+        if (Math.sqrt(dx*dx + dy*dy) / SIZE > range + 0.6) continue;
+        if (losClear({q:u.q, r:u.r}, {q:q, r:r})) vis.add(k(q, r));
+      }
+    }
+    vis.add(k(u.q, u.r));
+  }
+  return vis;
+}
+
+/* ===== Движение (поиск в ширину по очкам марша) ===== */
+function reachable(u) {
+  var res = new Map();
+  res.set(k(u.q, u.r), { cost: 0, prev: null });
+  var frontier = [[u.q, u.r, 0]];
+  while (frontier.length) {
+    frontier.sort(function(a, b) { return a[2] - b[2]; });
+    var cur = frontier.shift();
+    var q = cur[0], r = cur[1], c = cur[2];
+    var rec = res.get(k(q, r));
+    if (rec && c > rec.cost) continue;
+    for (var d = 0; d < 6; d++) {
+      var nq = q + DIRS[d][0], nr = r + DIRS[d][1];
+      if (!inMap(nq, nr)) continue;
+      var cell = map[nr][nq];
+      var cost = moveCost(cell);
+      if (cost >= 90) continue;
+      var nc = c + cost;
+      if (nc > u.mp) continue;
+      var nk = k(nq, nr);
+      var old = res.get(nk);
+      if (old && old.cost <= nc) continue;
+      res.set(nk, { cost: nc, prev: k(q, r) });
+      var occ = unitAt(nq, nr);
+      if (!occ) frontier.push([nq, nr, nc]);
+    }
+  }
+  var keys = [];
+  res.forEach(function(v, key) { keys.push(key); });
+  for (var i = 0; i < keys.length; i++) {
+    var parts = keys[i].split(',');
+    var pq = +parts[0], pr = +parts[1];
+    if ((pq !== u.q || pr !== u.r) && unitAt(pq, pr)) res.delete(keys[i]);
+  }
+  return res;
+}
+function pathTo(reach, key) {
+  var path = [];
+  var cur = key;
+  while (cur) {
+    path.unshift(cur);
+    var e = reach.get(cur);
+    cur = e ? e.prev : null;
+  }
+  return path;
+}
+
+/* ===== Журнал ===== */
+var logLines = [];
+function log(msg, sys) {
+  logLines.push({ msg: msg, sys: !!sys, turn: state.turn, side: state.phase });
+  var box = document.getElementById('logentries');
+  var div = document.createElement('div');
+  div.className = 'entry' + (sys ? ' sys' : '');
+  div.textContent = 'Ход ' + state.turn + ' · ' + msg;
+  box.appendChild(div);
+  box.parentElement.scrollTop = box.parentElement.scrollHeight;
+}
+function die(n) { return '<span class="die">[' + n + ']</span>'; }
+
+/* ===== Бой ===== */
+function retreat(u, fromQ, fromR) {
+  var best = null, bestCost = 1e9;
+  for (var d = 0; d < 6; d++) {
+    var nq = fromQ + DIRS[d][0], nr = fromR + DIRS[d][1];
+    if (!inMap(nq, nr)) continue;
+    if (unitAt(nq, nr)) continue;
+    var cost = moveCost(map[nr][nq]);
+    if (cost >= 90) continue;
+    if (cost < bestCost) { bestCost = cost; best = { q: nq, r: nr }; }
+  }
+  if (best) { u.q = best.q; u.r = best.r; return true; }
+  return false;
+}
+
+function destroyUnit(u) {
+  u.alive = false;
+  log((u.side === 'B' ? 'Синие' : 'Красные') + ': ' + u.name.toLowerCase() + ' уничтожен(ы)!');
+}
+
+function attack(a, d) {
+  if (!a.canAttack || !a.alive || !d.alive) return;
+  a.canAttack = false;
+  var dA = d6(), dD = d6();
+  var dist = hexDist(a, d);
+  var A = effStr(a) + dA;
+  if (a.type === 'cavalry' && a.movedFar && dist === 1) A += 2;
+  var D = Math.ceil(effStr(d) / 2) + terrDef(map[d.r][d.q]) + dD;
+  if (d.type === 'artillery' && dist === 1) D -= 2;
+  var diff = A - D;
+  var an = (a.side === 'B' ? 'Синие' : 'Красные') + ': ' + a.name.toLowerCase();
+  var dn = (d.side === 'B' ? 'синие' : 'красные') + ' ' + d.name.toLowerCase();
+  log(an + ' атакует: ' + dn + ' — атака ' + effStr(a) + '+' + die(dA) +
+      ' против обороны ' + Math.ceil(effStr(d) / 2) + '+' + terrDef(map[d.r][d.q]) + '+' + die(dD));
+
+  if (diff >= 5) {
+    destroyUnit(d);
+  } else if (diff >= 2) {
+    d.disrupted = true;
+    log(dn + ' расстроены и отступают.');
+    if (!retreat(d, d.q, d.r)) destroyUnit(d);
+  } else if (diff >= 1) {
+    log(dn + ' отступают.');
+    if (!retreat(d, d.q, d.r)) destroyUnit(d);
+  } else if (diff <= -2) {
+    a.disrupted = true;
+    log(an + ' отброшены с потерями!');
+    if (!retreat(a, a.q, a.r)) destroyUnit(a);
+  } else {
+    log('Атака отбита. Позиции удержаны.');
+  }
+  checkCommander();
+  if (state.selected === a || state.selected === d) {
+    state.selected = null; state.reach = null;
+  }
+  updateHUD();
+}
+
+function checkCommander() {
+  var bc = null, rc = null;
+  for (var i = 0; i < units.length; i++) {
+    if (units[i].type === 'commander' && units[i].side === 'B') bc = units[i];
+    if (units[i].type === 'commander' && units[i].side === 'R') rc = units[i];
+  }
+  if (bc && !bc.alive) gameOver('Красные', 'Командир синих пал — армия обезглавлена.');
+  else if (rc && !rc.alive) gameOver('Синие', 'Командир красных пал — армия обезглавлена.');
+}
+
+/* ===== Ходы ===== */
+function beginTurn(side) {
+  for (var i = 0; i < units.length; i++) {
+    var u = units[i];
+    if (!u.alive || u.side !== side) continue;
+    u.mp = UNITDEF[u.type].mp;
+    u.canAttack = true;
+    u.movedFar = false;
+    if (u.disrupted) {
+      var roll = d6();
+      if (roll >= 4) {
+        u.disrupted = false;
+        log((side === 'B' ? 'Синие' : 'Красные') + ': ' + u.name.toLowerCase() +
+            ' восстановили порядок ([' + roll + ']).', true);
+      } else {
+        log((side === 'B' ? 'Синие' : 'Красные') + ': ' + u.name.toLowerCase() +
+            ' всё ещё расстроены ([' + roll + ']).', true);
+      }
+    }
+  }
+}
+
+function endTurn() {
+  if (state.over) return;
+  var enemyTown = state.phase === 'B' ? towns.TOWN_B : towns.TOWN_A;
+  var occ = unitAt(enemyTown.q, enemyTown.r);
+  if (occ && occ.side === state.phase) {
+    gameOver(state.phase === 'B' ? 'Синие' : 'Красные',
+      'Город ' + (state.phase === 'B' ? 'Гросдорф' : 'Линден') + ' взят!');
+    return;
+  }
+  var combatCount = 0;
+  for (var i = 0; i < units.length; i++) {
+    if (units[i].alive && units[i].side === state.phase && units[i].type !== 'commander') combatCount++;
+  }
+  if (combatCount === 0) {
+    gameOver(state.phase === 'B' ? 'Красные' : 'Синие', 'Все отряды противника истреблены.');
+    return;
+  }
+
+  state.selected = null; state.reach = null;
+  if (state.phase === 'B') {
+    state.phase = 'R';
+    beginTurn('R');
+    if (state.mode === 'ai') {
+      updateHUD();
+      setTimeout(aiTurn, 450);
+      return;
+    }
+    showPass('Красные');
+  } else {
+    if (state.turn >= state.maxTurn) {
+      gameOver(null, 'Исчерпаны резервы и время: двадцатый ход завершён.');
+      return;
+    }
+    state.turn++;
+    state.phase = 'B';
+    beginTurn('B');
+    showPass('Синие');
+  }
+  updateHUD();
+}
+
+function showPass(side) {
+  state.screen = 'pass';
+  document.getElementById('passtext').textContent =
+    'Передайте устройство игроку ' + (side === 'Синие' ? 'СИНИХ' : 'КРАСНЫХ');
+  document.getElementById('passoverlay').classList.remove('hidden');
+  render();
+}
+
+function gameOver(winner, text) {
+  state.over = true;
+  state.screen = 'over';
+  document.getElementById('overtitle').textContent =
+    winner ? 'Победа: ' + winner : 'Ничья';
+  document.getElementById('overtext').textContent = text + ' (ход ' + state.turn + ')';
+  document.getElementById('overoverlay').classList.remove('hidden');
+  log('— Партия окончена: ' + (winner ? winner + '. ' : '') + text, true);
+  render();
+}
+
+/* ===== ИИ красных ===== */
+function moveTo(u, reach, key) {
+  if (key === k(u.q, u.r)) return;
+  var info = reach.get(key);
+  if (!info) return;
+  var path = pathTo(reach, key);
+  var parts = key.split(',');
+  u.q = +parts[0]; u.r = +parts[1];
+  u.mp -= info.cost;
+  if (path.length >= 4) u.movedFar = true;
+}
+
+function aiTurn() {
+  if (state.over) return;
+  var vis = visibleSet('R');
+  var myUnits = [];
+  for (var i = 0; i < units.length; i++) {
+    if (units[i].alive && units[i].side === 'R') myUnits.push(units[i]);
+  }
+
+  for (var m = 0; m < myUnits.length; m++) {
+    var u = myUnits[m];
+    if (!u.alive) continue;
+    var enemies = [];
+    for (i = 0; i < units.length; i++) {
+      var e = units[i];
+      if (e.alive && e.side === 'B' && vis.has(k(e.q, e.r))) enemies.push(e);
+    }
+
+    if (u.type === 'artillery') {
+      if (!u.canAttack) continue;
+      var best = null, bestScore = -1;
+      for (i = 0; i < enemies.length; i++) {
+        var dist = hexDist(u, enemies[i]);
+        if (dist < 2 || dist > u.range) continue;
+        if (!losClear(u, enemies[i])) continue;
+        var score = effStr(enemies[i]) - terrDef(map[enemies[i].r][enemies[i].q]);
+        if (score > bestScore) { bestScore = score; best = enemies[i]; }
+      }
+      if (best) attack(u, best);
+      continue;
+    }
+
+    if (u.type === 'commander') {
+      var reach = reachable(u);
+      var bestKey = k(u.q, u.r), bestScore2 = -1e9;
+      reach.forEach(function(info, key) {
+        var parts = key.split(',');
+        var q = +parts[0], r = +parts[1];
+        var score = 0;
+        for (var j = 0; j < myUnits.length; j++) {
+          var f = myUnits[j];
+          if (f === u || !f.alive || f.type === 'commander') continue;
+          var dd = hexDist({q:q, r:r}, f);
+          if (dd <= 2) score += (3 - dd) * 2;
+        }
+        score -= info.cost;
+        if (score > bestScore2) { bestScore2 = score; bestKey = key; }
+      });
+      moveTo(u, reach, bestKey);
+      continue;
+    }
+
+    var target = null, td = 1e9;
+    for (i = 0; i < enemies.length; i++) {
+      var dd2 = hexDist(u, enemies[i]);
+      if (dd2 < td) { td = dd2; target = enemies[i]; }
+    }
+    var goal = target;
+    if (!goal) {
+      var goals = [towns.bridge1, towns.bridge2, towns.TOWN_B];
+      var gd = 1e9;
+      for (i = 0; i < goals.length; i++) {
+        var dd3 = hexDist(u, goals[i]);
+        if (dd3 < gd) { gd = dd3; goal = goals[i]; }
+      }
+    }
+    if (!goal) continue;
+
+    var reach2 = reachable(u);
+    var bestKey2 = k(u.q, u.r), bestScore3 = -1e9;
+    reach2.forEach(function(info, key) {
+      var parts = key.split(',');
+      var q = +parts[0], r = +parts[1];
+      var dd4 = hexDist({q:q, r:r}, goal);
+      var score = -dd4 * 10 - info.cost;
+      if (target && terrDef(map[r][q]) > 0) score += terrDef(map[r][q]) * 2;
+      if (score > bestScore3) { bestScore3 = score; bestKey2 = key; }
+    });
+    moveTo(u, reach2, bestKey2);
+
+    if (target && hexDist(u, target) === 1 && u.canAttack) attack(u, target);
+  }
+  if (!state.over) endTurn();
+}
+
+/* ===== Холст и отрисовка ===== */
+var canvas = document.getElementById('map');
+var ctx = canvas.getContext('2d');
+var view = { x: 0, y: 0, scale: 1, init: false };
+var dpr = 1;
+
+function resizeCanvas() {
+  dpr = window.devicePixelRatio || 1;
+  var wrap = document.getElementById('canvaswrap');
+  canvas.width = Math.max(1, wrap.clientWidth * dpr);
+  canvas.height = Math.max(1, wrap.clientHeight * dpr);
+  if (!view.init) fitView();
+  render();
+}
+window.addEventListener('resize', resizeCanvas);
+
+function fitView() {
+  var mapW = SIZE * (1.5 * (W - 1) + 2);
+  var mapH = SIZE * SQ3 * (H + 0.5);
+  var cw = canvas.width / dpr, ch = canvas.height / dpr;
+  view.scale = Math.min(cw / (mapW + 20), ch / (mapH + 20));
+  view.x = (cw - mapW * view.scale) / 2;
+  view.y = (ch - mapH * view.scale) / 2 + SIZE * SQ3 / 2 * view.scale;
+  view.init = true;
+}
+
+function hexPath(cx, cy, s) {
+  ctx.beginPath();
+  for (var i = 0; i < 6; i++) {
+    var a = Math.PI / 180 * (60 * i);
+    var x = cx + s * Math.cos(a), y = cy + s * Math.sin(a);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+}
+
+var TCOLORS = { 0:'#a9bd7f', 1:'#5f7a4a', 2:'#c3ac74', 3:'#7fa3c2', 4:'#8d9a76', 5:'#b5a488' };
+
+function drawTown(cx, cy, s) {
+  var hs = s * 0.32;
+  ctx.fillStyle = '#8a4a3a';
+  ctx.fillRect(cx - hs, cy - hs * 0.2, hs * 1.1, hs * 0.9);
+  ctx.fillRect(cx + hs * 0.1, cy - hs * 0.9, hs * 1.0, hs * 1.6);
+  ctx.fillStyle = '#5a3026';
+  ctx.beginPath();
+  ctx.moveTo(cx - hs * 1.1, cy - hs * 0.2);
+  ctx.lineTo(cx - hs * 0.45, cy - hs * 0.75);
+  ctx.lineTo(cx + hs * 0.2, cy - hs * 0.2);
+  ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(cx + hs * 0.05, cy - hs * 0.9);
+  ctx.lineTo(cx + hs * 0.6, cy - hs * 1.4);
+  ctx.lineTo(cx + hs * 1.15, cy - hs * 0.9);
+  ctx.closePath(); ctx.fill();
+}
+
+function drawForest(cx, cy, s) {
+  ctx.fillStyle = '#3d5430';
+  for (var i = 0; i < 5; i++) {
+    var a = i * 2.4, rr = s * 0.45;
+    var x = cx + rr * Math.cos(a), y = cy + rr * Math.sin(a);
+    ctx.beginPath();
+    ctx.moveTo(x, y - s * 0.22);
+    ctx.lineTo(x - s * 0.14, y + s * 0.12);
+    ctx.lineTo(x + s * 0.14, y + s * 0.12);
+    ctx.closePath(); ctx.fill();
+  }
+}
+
+function drawHill(cx, cy, s) {
+  ctx.strokeStyle = 'rgba(90,70,40,.55)';
+  ctx.lineWidth = Math.max(1, s * 0.05);
+  ctx.beginPath();
+  ctx.arc(cx, cy + s * 0.1, s * 0.42, Math.PI * 1.15, Math.PI * 1.85);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx - s * 0.15, cy + s * 0.22, s * 0.25, Math.PI * 1.15, Math.PI * 1.85);
+  ctx.stroke();
+}
+
+function drawMarsh(cx, cy, s) {
+  ctx.strokeStyle = 'rgba(50,60,45,.6)';
+  ctx.lineWidth = Math.max(1, s * 0.045);
+  for (var i = -1; i <= 1; i++) {
+    ctx.beginPath();
+    ctx.moveTo(cx - s * 0.3, cy + i * s * 0.22);
+    ctx.lineTo(cx - s * 0.05, cy + i * s * 0.22);
+    ctx.moveTo(cx + s * 0.05, cy + i * s * 0.22);
+    ctx.lineTo(cx + s * 0.3, cy + i * s * 0.22);
+    ctx.stroke();
+  }
+}
+
+function drawRoad(q, r, cx, cy, s) {
+  ctx.strokeStyle = '#c9b189';
+  ctx.lineWidth = Math.max(2, s * 0.16);
+  ctx.lineCap = 'round';
+  for (var d = 0; d < 6; d++) {
+    var nq = q + DIRS[d][0], nr = r + DIRS[d][1];
+    if (!inMap(nq, nr) || !map[nr][nq].road) continue;
+    var p2 = hexToPixel(nq, nr);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo((cx + p2.x) / 2, (cy + p2.y) / 2);
+    ctx.stroke();
+  }
+  if (map[r][q].t === T.WATER) {
+    ctx.strokeStyle = '#6b5335';
+    ctx.lineWidth = Math.max(3, s * 0.22);
+    var any = false;
+    for (var e = 0; e < 2; e++) {
+      var dr = e === 0 ? 1 : -1;
+      var bq = q, br = r + dr;
+      if (!inMap(bq, br)) continue;
+      var bp = hexToPixel(bq, br);
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo((cx + bp.x) / 2, (cy + bp.y) / 2); ctx.stroke();
+      any = true;
+    }
+    if (!any) { ctx.beginPath(); ctx.moveTo(cx - s*0.4, cy); ctx.lineTo(cx + s*0.4, cy); ctx.stroke(); }
+  }
+}
+
+function drawUnit(u, cx, cy, s, ghost) {
+  var w = s * 1.15, h = s * 0.62;
+  ctx.globalAlpha = ghost ? 0.45 : (u.disrupted ? 0.85 : 1);
+  ctx.fillStyle = u.side === 'B' ? '#2e5d8e' : '#9e3a2e';
+  ctx.strokeStyle = '#f0e8d0';
+  ctx.lineWidth = Math.max(1.2, s * 0.05);
+  var x = cx - w / 2, y = cy - h / 2;
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.fill(); ctx.stroke();
+
+  var sym = UNITDEF[u.type].sym;
+  if (sym === 'X') {
+    ctx.strokeStyle = '#f0e8d0'; ctx.lineWidth = Math.max(1, s * 0.06);
+    ctx.beginPath();
+    ctx.moveTo(x + w*0.2, y + h*0.22); ctx.lineTo(x + w*0.8, y + h*0.78);
+    ctx.moveTo(x + w*0.8, y + h*0.22); ctx.lineTo(x + w*0.2, y + h*0.78);
+    ctx.stroke();
+  } else if (sym === '/') {
+    ctx.strokeStyle = '#f0e8d0'; ctx.lineWidth = Math.max(1.4, s * 0.07);
+    ctx.beginPath();
+    ctx.moveTo(x + w*0.25, y + h*0.8); ctx.lineTo(x + w*0.75, y + h*0.2);
+    ctx.stroke();
+  } else if (sym === 'O') {
+    ctx.fillStyle = '#f0e8d0';
+    ctx.beginPath();
+    ctx.arc(cx, cy, s * 0.14, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = '#f0e8d0';
+    ctx.font = 'bold ' + Math.round(s * 0.34) + 'px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('\u2605', cx, cy + 1);
+  }
+  ctx.fillStyle = '#f0e8d0';
+  ctx.font = 'bold ' + Math.round(s * 0.26) + 'px Georgia, serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(String(effStr(u)), x + w + 2, y - 3);
+  if (u.disrupted) {
+    ctx.fillStyle = '#ffd23e';
+    ctx.textAlign = 'right';
+    ctx.fillText('!', x - 3, y - 3);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function render() {
+  var cw = canvas.width / dpr, ch = canvas.height / dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = '#242017';
+  ctx.fillRect(0, 0, cw, ch);
+  if (state.screen === 'title') return;
+  if (state.screen === 'over') { drawMapAndUnits(new Set()); return; }
+  drawMapAndUnits(visibleSet(state.phase));
+}
+
+function drawMapAndUnits(vis) {
+  var s = SIZE;
+  ctx.save();
+  ctx.translate(view.x, view.y);
+  ctx.scale(view.scale, view.scale);
+
+  for (var r = 0; r < H; r++) {
+    for (var q = 0; q < W; q++) {
+      var cell = map[r][q];
+      var p = hexToPixel(q, r);
+      var visible = vis.has(k(q, r));
+      hexPath(p.x, p.y, s);
+      ctx.fillStyle = TCOLORS[cell.t];
+      ctx.fill();
+      if (cell.road) drawRoad(q, r, p.x, p.y, s);
+      if (visible) {
+        if (cell.t === T.FOREST) drawForest(p.x, p.y, s);
+        else if (cell.t === T.HILL) drawHill(p.x, p.y, s);
+        else if (cell.t === T.MARSH) drawMarsh(p.x, p.y, s);
+        else if (cell.t === T.TOWN) drawTown(p.x, p.y, s);
+      }
+      hexPath(p.x, p.y, s);
+      ctx.strokeStyle = 'rgba(40,40,25,.35)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      if (!visible) {
+        hexPath(p.x, p.y, s);
+        ctx.fillStyle = 'rgba(18,20,14,.55)';
+        ctx.fill();
+      }
+    }
+  }
+
+  if (state.screen === 'play' && state.selected && state.reach) {
+    state.reach.forEach(function(info, key) {
+      var parts = key.split(',');
+      var q = +parts[0], r = +parts[1];
+      if (q === state.selected.q && r === state.selected.r) return;
+      var p = hexToPixel(q, r);
+      hexPath(p.x, p.y, s * 0.92);
+      ctx.fillStyle = 'rgba(255,255,235,' + Math.max(0.08, 0.30 - info.cost * 0.03) + ')';
+      ctx.fill();
+    });
+    for (var i = 0; i < units.length; i++) {
+      var e = units[i];
+      if (!e.alive || e.side === state.selected.side) continue;
+      var dist = hexDist(state.selected, e);
+      var ok = state.selected.range === 1
+        ? dist === 1
+        : dist >= 1 && dist <= state.selected.range && losClear(state.selected, e);
+      if (ok && state.selected.canAttack) {
+        var ep = hexToPixel(e.q, e.r);
+        hexPath(ep.x, ep.y, s * 0.98);
+        ctx.strokeStyle = '#e04a30';
+        ctx.lineWidth = Math.max(2, s * 0.09);
+        ctx.stroke();
+      }
+    }
+    var sp = hexToPixel(state.selected.q, state.selected.r);
+    hexPath(sp.x, sp.y, s);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = Math.max(2, s * 0.08);
+    ctx.stroke();
+  }
+
+  for (i = 0; i < units.length; i++) {
+    var u = units[i];
+    if (!u.alive) continue;
+    var visNow = vis.has(k(u.q, u.r));
+    if (u.side !== state.phase && !visNow) continue;
+    var up = hexToPixel(u.q, u.r);
+    drawUnit(u, up.x, up.y, s, u.side !== state.phase);
+  }
+  ctx.restore();
+}
+
+/* ===== Ввод: касания, перетаскивание, щипок ===== */
+var pointers = new Map();
+var pinchStart = null;
+var dragMoved = false;
+
+canvas.addEventListener('pointerdown', function(e) {
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  dragMoved = false;
+  if (pointers.size === 2) {
+    var pts = [];
+    pointers.forEach(function(p) { pts.push(p); });
+    pinchStart = { d: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y), scale: view.scale };
+  }
+  try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+});
+canvas.addEventListener('pointermove', function(e) {
+  var prev = pointers.get(e.pointerId);
+  if (!prev) return;
+  var dx = e.clientX - prev.x, dy = e.clientY - prev.y;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 2 && pinchStart) {
+    var pts = [];
+    pointers.forEach(function(p) { pts.push(p); });
+    var d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    if (d > 10) setZoom(pinchStart.scale * (d / pinchStart.d), e.clientX, e.clientY);
+    dragMoved = true;
+    return;
+  }
+  if (Math.abs(dx) + Math.abs(dy) > 3) dragMoved = true;
+  if (dragMoved && pointers.size === 1) {
+    view.x += dx;
+    view.y += dy;
+    clampView(canvas.width / dpr, canvas.height / dpr);
+    render();
+  }
+});
+canvas.addEventListener('pointerup', function(e) {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinchStart = null;
+  if (!dragMoved && state.screen === 'play') handleTap(e.clientX, e.clientY);
+});
+canvas.addEventListener('pointercancel', function(e) {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinchStart = null;
+});
+canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+canvas.addEventListener('wheel', function(e) {
+  e.preventDefault();
+  setZoom(view.scale * (e.deltaY < 0 ? 1.12 : 0.89), e.clientX, e.clientY);
+}, { passive: false });
+
+function setZoom(newScale, px, py) {
+  var cw = canvas.width / dpr, ch = canvas.height / dpr;
+  newScale = Math.max(0.35, Math.min(2.6, newScale));
+  var wx = (px - view.x) / view.scale, wy = (py - view.y) / view.scale;
+  view.scale = newScale;
+  view.x = px - wx * newScale;
+  view.y = py - wy * newScale;
+  clampView(cw, ch);
+  render();
+}
+function clampView(cw, ch) {
+  var mapW = SIZE * (1.5 * (W - 1) + 2) * view.scale;
+  var mapH = SIZE * SQ3 * (H + 0.5) * view.scale;
+  if (mapW < cw) view.x = (cw - mapW) / 2;
+  else view.x = Math.min(0, Math.max(cw - mapW, view.x));
+  if (mapH < ch) view.y = (ch - mapH) / 2;
+  else view.y = Math.min(0, Math.max(ch - mapH, view.y));
+}
+
+function screenToHex(cx, cy) {
+  var rect = canvas.getBoundingClientRect();
+  var sx = cx - rect.left, sy = cy - rect.top;
+  var wx = (sx - view.x) / view.scale;
+  var wy = (sy - view.y) / view.scale;
+  var h = pixelToHex(wx, wy);
+  return inMap(h.q, h.r) ? h : null;
+}
+
+function handleTap(cx, cy) {
+  var h = screenToHex(cx, cy);
+  if (!h) return;
+  var u = unitAt(h.q, h.r);
+
+  if (state.selected) {
+    var sel = state.selected;
+    if (u && u.side === state.phase) { select(u); return; }
+    if (u && u.side !== state.phase) {
+      var dist = hexDist(sel, u);
+      var ok = sel.range === 1
+        ? dist === 1
+        : dist >= 1 && dist <= sel.range && losClear(sel, u);
+      if (ok && sel.canAttack) { attack(sel, u); return; }
+      flash(sel.canAttack ? 'Цель вне досягаемости или не видна.' : 'Отряд уже атаковал в этом ходу.');
+      return;
+    }
+    if (!u && state.reach && state.reach.has(k(h.q, h.r))) {
+      var info = state.reach.get(k(h.q, h.r));
+      var path = pathTo(state.reach, k(h.q, h.r));
+      moveTo(sel, state.reach, k(h.q, h.r));
+      if (path.length >= 4) sel.movedFar = true;
+      log((state.phase === 'B' ? 'Синие' : 'Красные') + ': ' + sel.name.toLowerCase() +
+          ' выступают (' + info.cost + ' балл. марша).', true);
+      state.selected = null; state.reach = null;
+      updateHUD();
+      render();
+      return;
+    }
+    flash('Туда не добраться в этом ходу.');
+    return;
+  }
+
+  if (u && u.side === state.phase) select(u);
+}
+
+function select(u) {
+  state.selected = u;
+  state.reach = reachable(u);
+  updateHUD();
+  render();
+}
+
+function flash(msg) {
+  document.getElementById('hint').textContent = msg;
+  setTimeout(updateHUD, 2200);
+}
+
+/* ===== HUD ===== */
+function updateHUD() {
+  var sideEl = document.getElementById('sidelabel');
+  sideEl.textContent = state.phase === 'B' ? 'Синие — наступление' : 'Красные — оборона';
+  sideEl.className = 'side ' + state.phase;
+  document.getElementById('turnlabel').textContent = 'Ход ' + state.turn + ' / ' + state.maxTurn +
+    (state.mode === 'ai' && state.phase === 'R' ? ' · ход ИИ…' : '');
+
+  var sel = state.selected;
+  var info = document.getElementById('selinfo');
+  var hint = document.getElementById('hint');
+  if (sel) {
+    info.innerHTML = '<b>' + sel.name + '</b> (' + (sel.side === 'B' ? 'синие' : 'красные') + ')' +
+      ' · сила ' + effStr(sel) + (sel.disrupted ? ' (расстроен)' : '') +
+      ' · марши: ' + sel.mp + ' · ' + (sel.canAttack ? 'может атаковать' : 'уже атаковал');
+    hint.textContent = sel.range > 1
+      ? 'Коснитесь гекса для марша или красной цели для огня (до ' + sel.range + ' гексов).'
+      : 'Коснитесь гекса для марша или соседнего врага для штыковой атаки.';
+  } else {
+    info.textContent = 'Отряд не выбран.';
+    hint.textContent = 'Коснитесь отряда, чтобы выбрать его. Перетаскивание — сдвиг карты, щипок — масштаб.';
+  }
+  document.getElementById('btnend').disabled = state.screen !== 'play';
+}
+
+/* ===== Инициализация ===== */
+function newGame(mode) {
+  towns = generateMap();
+  setupArmies();
+  state.mode = mode;
+  state.phase = 'B';
+  state.turn = 1;
+  state.over = false;
+  state.selected = null;
+  state.reach = null;
+  logLines.length = 0;
+  document.getElementById('logentries').innerHTML = '';
+  document.getElementById('titleoverlay').classList.add('hidden');
+  document.getElementById('overoverlay').classList.add('hidden');
+  log('Штаб открыт. Синие наступают с запада, красные обороняют реку и город Гросдорф.', true);
+  log('Города: Линден (запад) и Гросдорф (восток). Мосты через реку — ключи к переправе.', true);
+  beginTurn('B');
+  view.init = false;
+  fitView();
+  if (mode === 'hot') {
+    showPass('Синие');
+  } else {
+    state.screen = 'play';
+  }
+  updateHUD();
+  render();
+}
+
+document.getElementById('btnhot').addEventListener('click', function() { newGame('hot'); });
+document.getElementById('btnai').addEventListener('click', function() { newGame('ai'); });
+document.getElementById('btnready').addEventListener('click', function() {
+  document.getElementById('passoverlay').classList.add('hidden');
+  state.screen = 'play';
+  updateHUD();
+  render();
+});
+document.getElementById('btnrestart').addEventListener('click', function() {
+  document.getElementById('overoverlay').classList.add('hidden');
+  document.getElementById('titleoverlay').classList.remove('hidden');
+  state.screen = 'title';
+  state.over = false;
+  render();
+});
+document.getElementById('btnend').addEventListener('click', function() {
+  if (state.screen === 'play') endTurn();
+});
+document.getElementById('btnlog').addEventListener('click', function() {
+  document.getElementById('logsheet').classList.toggle('open');
+});
+document.getElementById('btnlogclose').addEventListener('click', function() {
+  document.getElementById('logsheet').classList.remove('open');
+});
+document.getElementById('btnzoomin').addEventListener('click', function() {
+  setZoom(view.scale * 1.25, canvas.width / dpr / 2, canvas.height / dpr / 2);
+});
+document.getElementById('btnzoomout').addEventListener('click', function() {
+  setZoom(view.scale * 0.8, canvas.width / dpr / 2, canvas.height / dpr / 2);
+});
+
+resizeCanvas();
+</script>
+</body>
+</html>
